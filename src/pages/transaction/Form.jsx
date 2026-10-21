@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "../../../components/ui/card";
 import { Label } from "../../../components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -6,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import api from "@/services/api";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { removeItem } from "@base-ui/react/internals/itemEquality";
+import { Navigate } from "react-router-dom";
 
 const FormTransaction = () => {
+    const navigate = useNavigate()
     const _initForm = {
         id: null,
         name: "",
@@ -16,10 +19,7 @@ const FormTransaction = () => {
         is_active: 1,
     };
 
-    const [showModal, setShowModal] = useState(false);
     const [products, setProducts] = useState([]);
-    const [formData, setFormData] = useState(_initForm);
-    const [isEdit, setIsEdit] = useState(false);
     const [cart, setCart] = useState([])
     const [paymentMethod, setPaymentMethod] = useState("cash")
     const [cashAmount, setCashAmount] = useState("")
@@ -69,48 +69,54 @@ const FormTransaction = () => {
         })
     }
 
-    
+    //acc: nilai akumumulasi
+        const TAX_RATE = 0.1
+        const totalAmount = cart.reduce((acc, item) => acc + item.price * item.quantity, 0)
+        const tax = Math.round(totalAmount * TAX_RATE)
+        const total = totalAmount + tax
+        const change = Number(cashAmount) - total
+        const handleCheckout = async () => {
+            try {
+                setLoading(true)
+                const payLoad = {
+                    user_id: 1,
+                    order_number: Date.now(),
+                    payment_method: paymentMethod === "cash" ? 2 : 1,
+                    items: cart.map((item) => ({
+                        product_id: item.id,
+                        quantity: Number(item.quantity),//item.quantity,
+                        price: Number(item.price)
+                    })),
+                    subtotal: total,//
+                    pay: cashAmount,
+                    tax: tax,
+                    total: totalAmount, //
+                }
+                console.log()
 
-    const handleChange = (e) => {
-        setFormData({
-            ...formData,
-            [e.target.name]: e.target.value,
-        });
-    };
+                console.log(payLoad)
+                navigate('/transaction/Print')
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-            const payload = {
-                name: formData.name,
-                email: formData.email,
-                password: formData.password,
-                is_active: parseInt(formData.is_active),
-            };
+                const response = await api.post('/transaction', payLoad)
 
-            if (isEdit) {
-                // Fixed template literal backticks here
-                await api.put(`/user/${formData.id}`, payload);
-            } else {
-                await api.post("/user", payload);
+                
+
+                if(!response.status){
+                    alert(response.message || "failed process transaction")
+                    return
+                }
+
+                if(paymentMethod === "qris" && response.payment_gateway?.redirect_url){
+                    window.location.href = response.payment_gateway.redirect_url
+                    return
+                }
+
+            } catch (error) {
+                console.log("error transaction order", error)
+            } finally{
+                setLoading(false)
             }
-            setFormData(_initForm);
-        } catch (error) {
-            console.log(error.message);
-        } finally {
-            fetchTransaction();
-            setShowModal(false);
         }
-    };
-
-    const handleDelete = async (id) => {
-        const confirmation = window.confirm("Are you sure want to delete this data?");
-        if (confirmation) {
-            // Fixed template literal backticks here
-            await api.delete(`/user/${id}`);
-            fetchTransaction();
-        }
-    };
 
     return (
             <>
@@ -175,7 +181,7 @@ const FormTransaction = () => {
                             <Label className="text-sm">Payment Method</Label>
                             <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                                 <SelectTrigger id="payment" className="h-8 text-xs w-full">
-                                    <SelectValue>Select one</SelectValue>
+                                    <SelectValue></SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="cash">cash</SelectItem>
@@ -191,19 +197,31 @@ const FormTransaction = () => {
                         )}
                         <div className="space-y-1.5 pt-3 border-t text-xs">
                             <div className="flex justify-between font-semibold text-sm">
+                                <span>Subtotal</span>
+                                <span>
+                                    {Number(totalAmount).toLocaleString("id-ID", {style: "currency", currency: "IDR", maximumFractionDigits: 0})}
+                                </span>
+                            </div>
+                            <div className="flex justify-between font-semibold text-sm">
+                                <span>Tax (10%)</span>
+                                <span>
+                                    {Number(tax).toLocaleString("id-ID", {style: "currency", currency: "IDR", maximumFractionDigits: 0})}
+                                </span>
+                            </div>
+                            <div className="flex justify-between font-semibold text-sm">
                                 <span>Total</span>
                                 <span>
-                                    Rp. 100.000
+                                    {Number(total).toLocaleString("id-ID", {style: "currency", currency: "IDR", maximumFractionDigits: 0})}
                                 </span>
                             </div>
                             <div className="flex justify-between text-muted-foreground">
                                 <span>change</span>
-                                <span>Rp. 100.000</span>
+                                <span>{Number(change).toLocaleString("id-ID", {style: "currency", currency: "IDR", maximumFractionDigits: 0})}</span>
                             </div>
                         </div>
                     </CardContent>
                     <CardFooter className="p-4 border-t">
-                        <Button className="w-full text-xs font-semibold">
+                        <Button onClick={handleCheckout} className="w-full text-xs font-semibold">
                             {loading ? "loading..." : "save transaction"}
                         </Button>
                     </CardFooter>
